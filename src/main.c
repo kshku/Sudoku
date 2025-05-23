@@ -1,25 +1,11 @@
 #include <raylib.h>
-#include <stdio.h>
+
+#include "game.h"
 
 int main(void) {
-    printf("Hello!\n");
+    if (!game_initialize()) return -1;
 
-    InitWindow(600, 400, "Sudoku");
-    SetTargetFPS(60);
+    if (!game_run()) return -1;
 
-    Font font = LoadFont("res/JetBrainsMonoNerdFont-Bold.ttf");
-
-    while (!WindowShouldClose()) {
-        BeginDrawing();
-
-        ClearBackground(BLACK);
-
-        DrawTextEx(font, "Welcome to Sudoku!", (Vector2){50, 50}, 30, 1, WHITE);
-
-        EndDrawing();
-    }
-
-    UnloadFont(font);
-
-    CloseWindow();
+    game_shutdown();
 }
