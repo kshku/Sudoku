@@ -45,12 +45,20 @@ SScene main_menu_update(void) {
 
     if (CheckCollisionPointRec(mpos, main_menu.puzzle_button.rect)) {
         SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) return SSCENE_SOLVER_BOARD;
+
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            SetMouseCursor(MOUSE_CURSOR_DEFAULT);
+            return SSCENE_PUZZLE_BOARD;
+        }
     }
 
     if (CheckCollisionPointRec(mpos, main_menu.solver_button.rect)) {
         SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) return SSCENE_SOLVER_BOARD;
+
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            SetMouseCursor(MOUSE_CURSOR_DEFAULT);
+            return SSCENE_SOLVER_BOARD;
+        }
     }
 
     return SSCENE_MAIN_MENU;

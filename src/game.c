@@ -1,5 +1,6 @@
 #include "game.h"
 
+#include "board.h"
 #include "main_menu.h"
 
 typedef struct Game {
@@ -22,6 +23,7 @@ bool game_initialize(void) {
     resources.font = &game.font;
 
     main_menu_init();
+    board_init();
 
     return true;
 }
@@ -32,10 +34,11 @@ bool game_run(void) {
         switch (game.scene) {
             case SSCENE_MAIN_MENU:
                 game.scene = main_menu_update();
+                if (game.scene != SSCENE_MAIN_MENU) board_start(game.scene);
                 break;
             case SSCENE_SOLVER_BOARD:
-                break;
             case SSCENE_PUZZLE_BOARD:
+                game.scene = board_update();
                 break;
             case SSCENE_GAME_END:
                 break;
@@ -53,8 +56,8 @@ bool game_run(void) {
                 main_menu_draw();
                 break;
             case SSCENE_SOLVER_BOARD:
-                break;
             case SSCENE_PUZZLE_BOARD:
+                board_draw();
                 break;
             case SSCENE_GAME_END:
                 break;
@@ -69,6 +72,7 @@ bool game_run(void) {
 }
 
 void game_shutdown(void) {
+    board_shutdown();
     main_menu_shutdown();
 
     UnloadFont(game.font);
