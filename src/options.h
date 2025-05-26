@@ -2,7 +2,7 @@
 
 #include <raylib.h>
 
-#include "gamestate.h"
+#include "global.h"
 
 typedef enum OptionType {
     OPTIONS_NONE,

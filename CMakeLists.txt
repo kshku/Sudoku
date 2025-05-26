@@ -7,6 +7,8 @@ find_package(raylib REQUIRED)
 
 add_executable(sudoku)
 
+target_compile_definitions(sudoku PRIVATE APP_NAME="${CMAKE_PROJECT_NAME}" VERSION_MAJOR=${CMAKE_PROJECT_VERSION_MAJOR} VERSION_MINOR=${CMAKE_PROJECT_VERSION_MINOR} VERSION_PATCH=${CMAKE_PROJECT_VERSION_PATCH})
+
 target_link_libraries(sudoku PRIVATE raylib)
 
 set(gcc_clang "$<COMPILE_LANG_AND_ID:C,Clang,GNU>")

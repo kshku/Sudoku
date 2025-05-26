@@ -2,6 +2,8 @@
 
 #include <raylib.h>
 
+#include "global.h"
+
 typedef struct Timer {
         double start;
         double elapsed;

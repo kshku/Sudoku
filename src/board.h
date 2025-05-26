@@ -2,6 +2,8 @@
 
 #include <raylib.h>
 
+#include "global.h"
+
 typedef struct Board {
         int state[9][9];
         int row, col;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdbool.h>
+#include "global.h"
 
 bool game_initialize(void);
 
