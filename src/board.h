@@ -19,7 +19,7 @@ void board_create_puzzle(Board *board, int n_filled);
 
 void board_create_empty(Board *board);
 
-void board_update(Board *board, bool is_solver);
+bool board_update(Board *board, bool is_solver);
 
 void board_draw(Board *board);
 

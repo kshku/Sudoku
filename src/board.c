@@ -63,13 +63,26 @@ void board_create_empty(Board *board) {
     board->col = 0;
 }
 
-void board_update(Board *board, bool is_solver) {
+static bool is_solved(Board *board) {
+    for (int i = 0; i < 9; ++i) {
+        for (int j = 0; j < 9; ++j) {
+            int num = board->state[i][j] & ~FIXED_MASK;
+            if (num & INVALID_MASK) return false;
+            if (!num) return false;
+        }
+    }
+
+    return true;
+}
+
+bool board_update(Board *board, bool is_solver) {
     // Change selection based on mouse input
-    Vector2 mpos = GetMousePosition();
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)
-        && CheckCollisionPointRec(mpos, *board->rect)) {
-        board->row = (int)((mpos.y - board->rect->y) / board->cell_height);
-        board->col = (int)((mpos.x - board->rect->x) / board->cell_width);
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        Vector2 mpos = GetMousePosition();
+        if (CheckCollisionPointRec(mpos, *board->rect)) {
+            board->row = (int)((mpos.y - board->rect->y) / board->cell_height);
+            board->col = (int)((mpos.x - board->rect->x) / board->cell_width);
+        }
     }
 
     // Change selection based on key input
@@ -101,15 +114,15 @@ void board_update(Board *board, bool is_solver) {
     // Update the numbers
     // Mask is either INVALID or FIXED
     // If FIXED, we won't modify
-    // We don't have to care about invalid, since it will be updated by checking
-    // the board
+    // We don't have to care about invalid, since it will be updated by
+    // checking the board
     if (!(board->state[board->row][board->col] & FIXED_MASK) || is_solver) {
         if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_DELETE))
             board->state[board->row][board->col] = 0;
 
         // We are not going to check for multiple key press in single frame
-        // Single key will get repeated for some reason, and if we do, our logic
-        // will highlight as invalid
+        // Single key will get repeated for some reason, and if we do, our
+        // logic will highlight as invalid
         int key = GetCharPressed();
         if (key >= '0' && key <= '9') {
             int value = key - '0';
@@ -125,6 +138,8 @@ void board_update(Board *board, bool is_solver) {
     }
 
     if (is_solver) board_highlight_invalid(board);
+
+    return is_solved(board);
 }
 
 void board_draw(Board *board) {
@@ -139,8 +154,10 @@ void board_draw(Board *board) {
 
             // Draw highlight if selected
             if (i == board->row && j == board->col)
-                DrawRectangle(cx, cy, board->cell_width, board->cell_height,
-                              (Color){.r = 133, .g = 114, .b = 113, .a = 126});
+                DrawRectangle(
+                    cx, cy, board->cell_width, board->cell_height,
+                    Fade((Color){.r = 133, .g = 144, .b = 113}, 0.5)
+                    /*Color){.r = 133, .g = 114, .b = 113, .a = 126}*/);
 
             // If state is not zero, draw the number and highlights
             if (board->state[i][j] & ~ALL_MASK) {
@@ -148,17 +165,15 @@ void board_draw(Board *board) {
                 if (board->state[i][j] & FIXED_MASK)
                     DrawRectangle(
                         cx, cy, board->cell_width, board->cell_height,
-                        (Color){
-                            130, 130, 130,
-                            (i == board->row && j == board->col) ? 126 : 255});
+                        Fade(GRAY,
+                             (i == board->row && j == board->col) ? 0.5 : 1));
 
                 // Draw highlight if invalid
                 if (board->state[i][j] & INVALID_MASK)
                     DrawRectangle(
                         cx, cy, board->cell_width, board->cell_height,
-                        (Color){
-                            230, 41, 55,
-                            (i == board->row && j == board->col) ? 126 : 255});
+                        Fade(RED,
+                             (i == board->row && j == board->col) ? 0.5 : 1));
 
                 // Draw the number
                 Vector2 pos = {
