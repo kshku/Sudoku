@@ -20,6 +20,7 @@ typedef struct Game {
         Board board;
         Rectangle board_rect;
         State state;
+        bool solve;
         bool board_created;
 } Game;
 
@@ -32,6 +33,7 @@ bool game_initialize(void) {
     game.fps = 60;
     game.board_created = false;
     game.state = STATE_PUZZLE_BOARD;
+    game.solve = false;
 
     float left_padding, right_padding, top_padding, bottom_padding;
     left_padding = top_padding = right_padding = 50;
@@ -59,7 +61,7 @@ bool game_run(void) {
         if (!game.board_created) {
             switch (game.state) {
                 case STATE_PUZZLE_BOARD:
-                    board_create_puzzle(&game.board);
+                    board_create_puzzle(&game.board, 10);
                     break;
                 case STATE_SOLVER_BOARD:
                     board_create_empty(&game.board);
@@ -68,20 +70,27 @@ bool game_run(void) {
             game.board_created = true;
         }
 
-        board_update(&game.board);
+        if (!game.solve)
+            board_update(&game.board, game.state == STATE_SOLVER_BOARD);
+
+        if (IsKeyPressed(KEY_SEMICOLON)) game.solve = true;
 
         BeginDrawing();
 
         ClearBackground(WHITE);
 
-        switch (game.state) {
-            case STATE_START_OPTIOINS:
-                draw_options();
-                break;
-            case STATE_PUZZLE_BOARD:
-            case STATE_SOLVER_BOARD:
-                board_draw(&game.board);
-                break;
+        if (!game.solve) {
+            switch (game.state) {
+                case STATE_START_OPTIOINS:
+                    draw_options();
+                    break;
+                case STATE_PUZZLE_BOARD:
+                case STATE_SOLVER_BOARD:
+                    board_draw(&game.board);
+                    break;
+            }
+        } else {
+            board_solve_anim(&game.board);
         }
 
         EndDrawing();

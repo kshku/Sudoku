@@ -8,12 +8,6 @@ typedef enum Mask {
     ALL_MASK = INVALID_MASK | FIXED_MASK
 } Mask;
 
-void board_highlight_invalid(Board *board);
-
-bool board_is_safe_to_insert(Board *board, int value, int row, int col);
-
-void remove_invalid_mask(Board *board);
-
 void board_create(Board *board, Font *font, Rectangle *rect) {
     board_create_empty(board);
 
@@ -24,23 +18,40 @@ void board_create(Board *board, Font *font, Rectangle *rect) {
     board->font_size = board->cell_height * 0.8;
 }
 
-void board_create_puzzle(Board *board) {
+void board_create_puzzle(Board *board, int n_filled) {
     board_create_empty(board);
 
-    for (int i = 0; i < 21; ++i) {
-        int row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
-        int value = GetRandomValue(1, 9);
+    // Sample board
+    int sample[9][9] = {
+        {5, 0, 1, 6, 0, 7, 9, 0, 0},
+        {0, 0, 9, 0, 0, 3, 2, 5, 0},
+        {8, 2, 7, 0, 9, 0, 0, 0, 0},
+        {9, 0, 2, 0, 5, 1, 3, 7, 0},
+        {3, 0, 0, 9, 8, 0, 0, 0, 0},
+        {0, 0, 5, 7, 0, 6, 0, 0, 0},
+        {4, 0, 6, 0, 7, 5, 0, 3, 2},
+        {0, 1, 0, 0, 0, 0, 7, 0, 5},
+        {0, 0, 3, 0, 0, 0, 1, 9, 6}
+    };
 
-        while (board->state[row][col]) {
-            row = GetRandomValue(0, 8);
-            col = GetRandomValue(0, 8);
-        }
+    for (int i = 0; i < 9; ++i)
+        for (int j = 0; j < 9; ++j)
+            if (sample[i][j]) board->state[i][j] = sample[i][j] | FIXED_MASK;
 
-        while (!board_is_safe_to_insert(board, value, row, col))
-            value = GetRandomValue(1, 9);
+    // for (int i = 0; i < n_filled; ++i) {
+    //     int row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
+    //     int value = GetRandomValue(1, 9);
 
-        board->state[row][col] = value | FIXED_MASK;
-    }
+    //     while (board->state[row][col]) {
+    //         row = GetRandomValue(0, 8);
+    //         col = GetRandomValue(0, 8);
+    //     }
+
+    //     while (!board_is_safe_to_insert(board, value, row, col))
+    //         value = GetRandomValue(1, 9);
+
+    //     board->state[row][col] = value | FIXED_MASK;
+    // }
 }
 
 void board_create_empty(Board *board) {
@@ -48,19 +59,17 @@ void board_create_empty(Board *board) {
     for (int i = 0; i < 9; ++i)
         for (int j = 0; j < 9; ++j) board->state[i][j] = 0;
 
-    board->selected_row = 0;
-    board->selected_col = 0;
+    board->row = 0;
+    board->col = 0;
 }
 
-void board_update(Board *board) {
+void board_update(Board *board, bool is_solver) {
     // Change selection based on mouse input
     Vector2 mpos = GetMousePosition();
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)
         && CheckCollisionPointRec(mpos, *board->rect)) {
-        board->selected_row =
-            (int)((mpos.y - board->rect->y) / board->cell_height);
-        board->selected_col =
-            (int)((mpos.x - board->rect->x) / board->cell_width);
+        board->row = (int)((mpos.y - board->rect->y) / board->cell_height);
+        board->col = (int)((mpos.x - board->rect->x) / board->cell_width);
     }
 
     // Change selection based on key input
@@ -73,20 +82,20 @@ void board_update(Board *board) {
 
     for (int i = 0; i < keys_length; ++i) {
         if ((IsKeyPressed(keys[i][0]) || IsKeyPressedRepeat(keys[i][0]))
-            && board->selected_col > 0)
-            --board->selected_col;
+            && board->col > 0)
+            --board->col;
 
         if ((IsKeyPressed(keys[i][1]) || IsKeyPressedRepeat(keys[i][1]))
-            && board->selected_col < 8)
-            ++board->selected_col;
+            && board->col < 8)
+            ++board->col;
 
         if ((IsKeyPressed(keys[i][2]) || IsKeyPressedRepeat(keys[i][2]))
-            && board->selected_row > 0)
-            --board->selected_row;
+            && board->row > 0)
+            --board->row;
 
         if ((IsKeyPressed(keys[i][3]) || IsKeyPressedRepeat(keys[i][3]))
-            && board->selected_row < 8)
-            ++board->selected_row;
+            && board->row < 8)
+            ++board->row;
     }
 
     // Update the numbers
@@ -94,10 +103,9 @@ void board_update(Board *board) {
     // If FIXED, we won't modify
     // We don't have to care about invalid, since it will be updated by checking
     // the board
-    if (!(board->state[board->selected_row][board->selected_col]
-          & FIXED_MASK)) {
+    if (!(board->state[board->row][board->col] & FIXED_MASK) || is_solver) {
         if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_DELETE))
-            board->state[board->selected_row][board->selected_col] = 0;
+            board->state[board->row][board->col] = 0;
 
         // We are not going to check for multiple key press in single frame
         // Single key will get repeated for some reason, and if we do, our logic
@@ -105,15 +113,18 @@ void board_update(Board *board) {
         int key = GetCharPressed();
         if (key >= '0' && key <= '9') {
             int value = key - '0';
-            if (!board_is_safe_to_insert(board, value, board->selected_row,
-                                         board->selected_col))
-                value |= INVALID_MASK;
-            board->state[board->selected_row][board->selected_col] = value;
+            if (is_solver) {
+                board->state[board->row][board->col] = value | FIXED_MASK;
+            } else {
+                if (!board_is_safe_to_insert(board, value, board->row,
+                                             board->col))
+                    value |= INVALID_MASK;
+                board->state[board->row][board->col] = value;
+            }
         }
     }
 
-    // Inefficient, we could just check for current position
-    // board_highlight_invalid(board);
+    if (is_solver) board_highlight_invalid(board);
 }
 
 void board_draw(Board *board) {
@@ -127,7 +138,7 @@ void board_draw(Board *board) {
             float cx = board->rect->x + (board->cell_width * j);
 
             // Draw highlight if selected
-            if (i == board->selected_row && j == board->selected_col)
+            if (i == board->row && j == board->col)
                 DrawRectangle(cx, cy, board->cell_width, board->cell_height,
                               (Color){.r = 133, .g = 114, .b = 113, .a = 126});
 
@@ -135,21 +146,19 @@ void board_draw(Board *board) {
             if (board->state[i][j] & ~ALL_MASK) {
                 // Draw highlight if Fixed number
                 if (board->state[i][j] & FIXED_MASK)
-                    DrawRectangle(cx, cy, board->cell_width, board->cell_height,
-                                  (Color){130, 130, 130,
-                                          (i == board->selected_row
-                                           && j == board->selected_col)
-                                              ? 126
-                                              : 255});
+                    DrawRectangle(
+                        cx, cy, board->cell_width, board->cell_height,
+                        (Color){
+                            130, 130, 130,
+                            (i == board->row && j == board->col) ? 126 : 255});
 
                 // Draw highlight if invalid
                 if (board->state[i][j] & INVALID_MASK)
-                    DrawRectangle(cx, cy, board->cell_width, board->cell_height,
-                                  (Color){230, 41, 55,
-                                          (i == board->selected_row
-                                           && j == board->selected_col)
-                                              ? 126
-                                              : 255});
+                    DrawRectangle(
+                        cx, cy, board->cell_width, board->cell_height,
+                        (Color){
+                            230, 41, 55,
+                            (i == board->row && j == board->col) ? 126 : 255});
 
                 // Draw the number
                 Vector2 pos = {
@@ -187,7 +196,7 @@ void board_destroy(Board *board) {
 }
 
 void board_highlight_invalid(Board *board) {
-    remove_invalid_mask(board);
+    board_clear_invalid(board);
 
     for (int i = 0; i < 9; ++i) {
         int found_row_pos[9] = {0};
@@ -255,7 +264,7 @@ void board_highlight_invalid(Board *board) {
     }
 }
 
-void remove_invalid_mask(Board *board) {
+void board_clear_invalid(Board *board) {
     for (int i = 0; i < 9; ++i)
         for (int j = 0; j < 9; ++j) board->state[i][j] &= ~INVALID_MASK;
 }
@@ -282,4 +291,115 @@ bool board_is_safe_to_insert(Board *board, int value, int row, int col) {
     }
 
     return true;
+}
+
+typedef enum SolverState {
+    SELECT,
+    SELECT_PREV,
+    SOLVE,
+    WAIT,
+    CANNOT_SOLVE,
+    COMPLETED
+} SolverState;
+
+typedef struct Solver {
+        bool solving;
+        int wait_count;
+        bool done;
+
+        SolverState after_wait;
+        SolverState state;
+} Solver;
+
+static Solver solver = {.solving = false};
+
+void board_solve_anim(Board *board) {
+    if (!solver.solving) {
+        solver.solving = true;
+        board->row = board->col = -1;
+        solver.state = SELECT;
+        solver.wait_count = 0;
+        board_clear_not_fixed(board);
+    } else {
+        switch (solver.state) {
+            case WAIT:
+                if (solver.wait_count) --solver.wait_count;
+                else solver.state = solver.after_wait;
+                break;
+            case SELECT:
+            case SELECT_PREV:
+            reselect:
+                if (solver.state == SELECT) {
+                    board->col = (board->col + 1) % 9;
+                    if (board->col == 0) ++board->row;
+
+                    if (board->row == 9) {
+                        board->row = board->col = 0;
+                        solver.state = COMPLETED;
+                        break;
+                    }
+                } else {
+                    --board->col;
+                    if (board->col == -1) {
+                        board->col = 8;
+                        --board->row;
+                    }
+
+                    if (board->row == -1) {
+                        board->row = board->col = 0;
+                        solver.state = CANNOT_SOLVE;
+                        break;
+                    }
+                }
+                if (solver.state == SELECT || solver.state == SELECT_PREV)
+                    if (board->state[board->row][board->col] & FIXED_MASK)
+                        goto reselect;
+
+                solver.state = SOLVE;
+                // solver.state = WAIT;
+                // solver.wait_count = 10;
+                // solver.after_wait = SOLVE;
+                break;
+            case SOLVE:
+                if ((board->state[board->row][board->col] & ~ALL_MASK) < 9) {
+                    int value =
+                        (board->state[board->row][board->col] & ~ALL_MASK) + 1;
+                    if (!board_is_safe_to_insert(board, value, board->row,
+                                                 board->col)) {
+                        // solver.after_wait = SOLVE;
+                        solver.state = SOLVE;
+                        value |= INVALID_MASK;
+                    } else {
+                        // solver.after_wait = SELECT;
+                        solver.state = SELECT;
+                    }
+                    board->state[board->row][board->col] = value;
+                } else {
+                    board->state[board->row][board->col] = 0;
+                    // solver.after_wait = SELECT_PREV;
+                    solver.state = SELECT_PREV;
+                }
+
+                // solver.state = WAIT;
+                solver.wait_count = 10;
+                break;
+            case CANNOT_SOLVE:
+                TraceLog(LOG_ERROR, "Can't solve!");
+            case COMPLETED:
+            default:
+                break;
+        }
+    }
+
+    board_draw(board);
+}
+
+void board_clear_not_fixed(Board *board) {
+    for (int i = 0; i < 9; ++i) {
+        for (int j = 0; j < 9; ++j) {
+            if (board->state[i][j] & FIXED_MASK)
+                board->state[i][j] &= ~INVALID_MASK;
+            else board->state[i][j] = 0;
+        }
+    }
 }
