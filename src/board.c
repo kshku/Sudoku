@@ -30,6 +30,11 @@ typedef struct Board {
         LoadingScreen loading_screen;
 
         SButton resume_button;
+
+        SButton main_menu_button;
+        SButton solve_button;
+        SButton pause_game_button;
+        SButton clear_board_button;
 } Board;
 
 static Board board;
@@ -54,7 +59,11 @@ static void *board_load(void *data, SThread *thread);
 
 static bool board_have_invalid(void);
 
-void board_init(void) {
+static void board_draw_buttons(void);
+
+static void board_update_buttons(Vector2 mpos, bool is_pressed);
+
+void board_init(SScene scene) {
     board.row = board.col = 0;
     board.timer_rect = (Rectangle){.x = 0,
                                    .y = 0,
@@ -72,10 +81,37 @@ void board_init(void) {
     board.text_size = MeasureTextEx(*resources.font, "0", board.font_size, 1);
 
     board.is_solving = false;
-    board.loading = false;
     board.is_paused = false;
 
     sbutton_create(&board.resume_button, "Resume", 64, board.board_rect);
+
+    float width_4 = GetScreenWidth() / 6;
+    Rectangle buttons_rect = {
+        .x = 20, .y = GetScreenHeight() - 100, .width = width_4, .height = 80};
+
+    sbutton_create(&board.main_menu_button, "Main Menu", 40, buttons_rect);
+
+    buttons_rect.x += width_4;
+    buttons_rect.width += width_4;
+
+    sbutton_create(&board.solve_button, "Solve Puzzle", 40, buttons_rect);
+
+    buttons_rect.x += width_4;
+    buttons_rect.width += width_4;
+
+    sbutton_create(&board.pause_game_button, "Pause Game", 40, buttons_rect);
+
+    buttons_rect.x += width_4;
+    buttons_rect.width += width_4;
+
+    sbutton_create(&board.clear_board_button, "Clear Board", 40, buttons_rect);
+
+    board.scene = scene;
+    board.loading = true;
+    loading_screen_init(&board.loading_screen, board_load,
+                        scene == SSCENE_PUZZLE_BOARD ? "Loading Puzzle..."
+                                                     : "Loading Solver...",
+                        1);
 }
 
 static void *board_load(void *data, SThread *thread) {
@@ -90,25 +126,21 @@ static void *board_load(void *data, SThread *thread) {
     return NULL;
 }
 
-void board_start(SScene scene) {
-    board.scene = scene;
-    board.loading = true;
-    loading_screen_init(&board.loading_screen, board_load,
-                        scene == SSCENE_PUZZLE_BOARD ? "Loading Puzzle..."
-                                                     : "Loading Solver...",
-                        1);
-}
-
 SScene board_update() {
+    SetMouseCursor(MOUSE_CURSOR_DEFAULT);
     if (board.is_paused) {
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            Vector2 mpos = GetMousePosition();
+        Vector2 mpos = GetMousePosition();
+        bool is_pressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 
-            if (CheckCollisionPointRec(mpos, board.resume_button.rect)) {
+        if (CheckCollisionPointRec(mpos, board.resume_button.rect)) {
+            SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
+            if (is_pressed) {
                 board.is_paused = false;
                 timer_resume(&board.timer);
             }
         }
+
+        board_update_buttons(mpos, is_pressed);
 
         return board.scene;
     }
@@ -122,10 +154,12 @@ SScene board_update() {
         return board.scene;
     }
 
+    Vector2 mpos = GetMousePosition();
+    bool is_pressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+
     // Change selection based on mouse input
     if (!board.is_solving) {
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            Vector2 mpos = GetMousePosition();
+        if (is_pressed) {
             if (CheckCollisionPointRec(mpos, board.board_rect)) {
                 board.row =
                     (int)((mpos.y - board.board_rect.y) / board.cell_height);
@@ -160,26 +194,19 @@ SScene board_update() {
                 ++board.row;
         }
 
-        if ((IsKeyPressed(KEY_SEMICOLON))) board.is_solving = true;
-
-        if (board.scene == SSCENE_PUZZLE_BOARD && (IsKeyPressed(KEY_P))) {
-            board.is_paused = true;
-            timer_pause(&board.timer);
-        }
-
         // Update the numbers
         // Mask is either INVALID or FIXED
         // If FIXED, we won't modify
-        // We don't have to care about invalid, since it will be updated by
-        // checking the board
+        // We don't have to care about invalid, since it will be updated
+        // by checking the board
         if (!(board.state[board.row][board.col] & FIXED_MASK)
             || board.scene == SSCENE_SOLVER_BOARD) {
             if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressed(KEY_DELETE))
                 board.state[board.row][board.col] = 0;
 
-            // We are not going to check for multiple key press in single frame
-            // Single key will get repeated for some reason, and if we do, our
-            // logic will highlight as invalid
+            // We are not going to check for multiple key press in
+            // single frame Single key will get repeated for some
+            // reason, and if we do, our logic will highlight as invalid
             int key = GetCharPressed();
             if (key >= '0' && key <= '9') {
                 int value = key - '0';
@@ -196,6 +223,8 @@ SScene board_update() {
     } else {
         board_solve_anim();
     }
+
+    board_update_buttons(mpos, is_pressed);
 
     if (board.scene == SSCENE_SOLVER_BOARD) board_highlight_invalid();
 
@@ -273,11 +302,14 @@ void board_draw() {
 
     switch (board.scene) {
         case SSCENE_PUZZLE_BOARD:
-            timer_darw(&board.timer, board.timer_rect, board.is_paused);
+            timer_darw(&board.timer, board.timer_rect,
+                       board.is_paused || board.is_solving);
             break;
         default:
             break;
     }
+
+    board_draw_buttons();
 }
 
 void board_shutdown(void) {
@@ -560,4 +592,48 @@ static bool board_have_invalid(void) {
     }
 
     return true;
+}
+
+static void board_update_buttons(Vector2 mpos, bool is_pressed) {
+    if (CheckCollisionPointRec(mpos, board.main_menu_button.rect)) {
+        SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
+        if (is_pressed) board.scene = SSCENE_MAIN_MENU;
+    }
+
+    if (!board.is_solving && !board.is_paused) {
+        if (CheckCollisionPointRec(mpos, board.solve_button.rect)) {
+            SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
+            if (is_pressed) {
+                board.is_solving = true;
+                timer_pause(&board.timer);
+            }
+        }
+
+        if (board.scene == SSCENE_PUZZLE_BOARD) {
+            if (CheckCollisionPointRec(mpos, board.pause_game_button.rect)) {
+                SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
+                if (is_pressed) {
+                    board.is_paused = true;
+                    timer_pause(&board.timer);
+                }
+            }
+        }
+
+        if (CheckCollisionPointRec(mpos, board.clear_board_button.rect)) {
+            SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
+            if (is_pressed) {
+                if (board.scene == SSCENE_PUZZLE_BOARD) board_clear_not_fixed();
+                else board_create_empty();
+            }
+        }
+    }
+}
+
+static void board_draw_buttons(void) {
+    sbutton_draw(&board.main_menu_button, BLUE, BLACK);
+    sbutton_draw(&board.clear_board_button, BLUE, BLACK);
+    sbutton_draw(&board.solve_button, BLUE, BLACK);
+    if (board.scene == SSCENE_PUZZLE_BOARD)
+        sbutton_draw(&board.pause_game_button, BLUE, BLACK);
+    else sbutton_draw(&board.pause_game_button, GRAY, BLACK);
 }

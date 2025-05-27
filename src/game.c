@@ -23,7 +23,6 @@ bool game_initialize(void) {
     resources.font = &game.font;
 
     main_menu_init();
-    board_init();
 
     return true;
 }
@@ -34,7 +33,7 @@ bool game_run(void) {
         switch (game.scene) {
             case SSCENE_MAIN_MENU:
                 game.scene = main_menu_update();
-                if (game.scene != SSCENE_MAIN_MENU) board_start(game.scene);
+                if (game.scene != SSCENE_MAIN_MENU) board_init(game.scene);
                 break;
             case SSCENE_SOLVER_BOARD:
             case SSCENE_PUZZLE_BOARD:

@@ -2,9 +2,7 @@
 
 #include "global.h"
 
-void board_init(void);
-
-void board_start(SScene scene);
+void board_init(SScene scene);
 
 SScene board_update(void);
 
