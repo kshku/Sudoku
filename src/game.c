@@ -1,6 +1,7 @@
 #include "game.h"
 
 #include "board.h"
+#include "end.h"
 #include "main_menu.h"
 
 typedef struct Game {
@@ -40,6 +41,8 @@ bool game_run(void) {
                 game.scene = board_update();
                 break;
             case SSCENE_GAME_END:
+                game.scene = end_update();
+                if (game.scene == SSCENE_PUZZLE_BOARD) board_init(game.scene);
                 break;
             default:
                 break;
@@ -59,6 +62,7 @@ bool game_run(void) {
                 board_draw();
                 break;
             case SSCENE_GAME_END:
+                end_draw();
                 break;
             default:
                 break;

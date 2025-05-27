@@ -1,5 +1,6 @@
 #include "board.h"
 
+#include "end.h"
 #include "loading.h"
 #include "utils/sbutton.h"
 #include "utils/stext.h"
@@ -228,7 +229,12 @@ SScene board_update() {
 
     if (board.scene == SSCENE_SOLVER_BOARD) board_highlight_invalid();
 
-    if (is_solved()) return SSCENE_GAME_END;
+    if (is_solved()) {
+        unsigned int hour, min, sec;
+        timer_get_hour_min_sec(board.timer.elapsed, &hour, &min, &sec);
+        end_init(hour, min, sec);
+        return SSCENE_GAME_END;
+    }
 
     return board.scene;
 }
