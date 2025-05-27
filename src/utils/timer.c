@@ -9,6 +9,14 @@ void timer_update(Timer *timer) {
     timer->elapsed = ((long long)GetTime()) - timer->start;
 }
 
+void timer_pause(Timer *timer) {
+    timer->paused = (long long)GetTime();
+}
+
+void timer_resume(Timer *timer) {
+    timer->start += ((long long)GetTime()) - timer->paused;
+}
+
 void timer_get_hour_min_sec(long long time, unsigned int *hour,
                             unsigned int *min, unsigned int *sec) {
     *hour = time / 3600;
@@ -18,8 +26,9 @@ void timer_get_hour_min_sec(long long time, unsigned int *hour,
     *sec = time;
 }
 
-void timer_darw(Timer *timer, Rectangle rect) {
-    timer_update(timer);
+void timer_darw(Timer *timer, Rectangle rect, bool paused) {
+    if (!paused) timer_update(timer);
+
     unsigned int hour, min, sec;
     float font_size = rect.height * 0.8;
 

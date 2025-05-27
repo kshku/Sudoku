@@ -1,6 +1,7 @@
 #include "board.h"
 
 #include "loading.h"
+#include "utils/sbutton.h"
 #include "utils/stext.h"
 #include "utils/timer.h"
 
@@ -23,9 +24,12 @@ typedef struct Board {
         float font_size;
 
         bool is_solving;
+        bool is_paused;
 
         bool loading;
         LoadingScreen loading_screen;
+
+        SButton resume_button;
 } Board;
 
 static Board board;
@@ -48,6 +52,8 @@ static void board_solve_anim();
 
 static void *board_load(void *data, SThread *thread);
 
+static bool board_have_invalid(void);
+
 void board_init(void) {
     board.row = board.col = 0;
     board.timer_rect = (Rectangle){.x = 0,
@@ -67,6 +73,9 @@ void board_init(void) {
 
     board.is_solving = false;
     board.loading = false;
+    board.is_paused = false;
+
+    sbutton_create(&board.resume_button, "Resume", 64, board.board_rect);
 }
 
 static void *board_load(void *data, SThread *thread) {
@@ -91,6 +100,19 @@ void board_start(SScene scene) {
 }
 
 SScene board_update() {
+    if (board.is_paused) {
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            Vector2 mpos = GetMousePosition();
+
+            if (CheckCollisionPointRec(mpos, board.resume_button.rect)) {
+                board.is_paused = false;
+                timer_resume(&board.timer);
+            }
+        }
+
+        return board.scene;
+    }
+
     if (board.loading) {
         board.loading = !loading_screen_update(&board.loading_screen);
         if (!board.loading) {
@@ -140,6 +162,11 @@ SScene board_update() {
 
         if ((IsKeyPressed(KEY_SEMICOLON))) board.is_solving = true;
 
+        if (board.scene == SSCENE_PUZZLE_BOARD && (IsKeyPressed(KEY_P))) {
+            board.is_paused = true;
+            timer_pause(&board.timer);
+        }
+
         // Update the numbers
         // Mask is either INVALID or FIXED
         // If FIXED, we won't modify
@@ -183,41 +210,44 @@ void board_draw() {
         return;
     }
 
-    for (int i = 0; i < 9; ++i) {
-        float cy = board.board_rect.y + (board.cell_height * i);
+    if (!board.is_paused) {
+        for (int i = 0; i < 9; ++i) {
+            float cy = board.board_rect.y + (board.cell_height * i);
 
-        // Draw numbers and highlights
-        for (int j = 0; j < 9; ++j) {
-            float cx = board.board_rect.x + (board.cell_width * j);
+            // Draw numbers and highlights
+            for (int j = 0; j < 9; ++j) {
+                float cx = board.board_rect.x + (board.cell_width * j);
 
-            // Draw highlight if selected
-            if (i == board.row && j == board.col)
-                DrawRectangle(cx, cy, board.cell_width, board.cell_height,
-                              Fade((Color){.r = 133, .g = 144, .b = 113}, 0.5));
-
-            // If state is not zero, draw the number and highlights
-            if (board.state[i][j] & ~ALL_MASK) {
-                // Draw highlight if Fixed number
-                if (board.state[i][j] & FIXED_MASK)
+                // Draw highlight if selected
+                if (i == board.row && j == board.col)
                     DrawRectangle(
                         cx, cy, board.cell_width, board.cell_height,
-                        Fade(GRAY,
-                             (i == board.row && j == board.col) ? 0.5 : 1));
+                        Fade((Color){.r = 133, .g = 144, .b = 113}, 0.5));
 
-                // Draw highlight if invalid
-                if (board.state[i][j] & INVALID_MASK)
-                    DrawRectangle(
-                        cx, cy, board.cell_width, board.cell_height,
-                        Fade(RED,
-                             (i == board.row && j == board.col) ? 0.5 : 1));
+                // If state is not zero, draw the number and highlights
+                if (board.state[i][j] & ~ALL_MASK) {
+                    // Draw highlight if Fixed number
+                    if (board.state[i][j] & FIXED_MASK)
+                        DrawRectangle(
+                            cx, cy, board.cell_width, board.cell_height,
+                            Fade(GRAY,
+                                 (i == board.row && j == board.col) ? 0.5 : 1));
 
-                // Draw the number
-                Vector2 pos = {
-                    .x = cx + (board.cell_width - board.text_size.x) / 2,
-                    .y = cy + (board.cell_height - board.text_size.y) / 2};
-                DrawTextCodepoint(*resources.font,
-                                  ((board.state[i][j] & ~ALL_MASK) + '0'), pos,
-                                  board.font_size, BLACK);
+                    // Draw highlight if invalid
+                    if (board.state[i][j] & INVALID_MASK)
+                        DrawRectangle(
+                            cx, cy, board.cell_width, board.cell_height,
+                            Fade(RED,
+                                 (i == board.row && j == board.col) ? 0.5 : 1));
+
+                    // Draw the number
+                    Vector2 pos = {
+                        .x = cx + (board.cell_width - board.text_size.x) / 2,
+                        .y = cy + (board.cell_height - board.text_size.y) / 2};
+                    DrawTextCodepoint(*resources.font,
+                                      ((board.state[i][j] & ~ALL_MASK) + '0'),
+                                      pos, board.font_size, BLACK);
+                }
             }
         }
     }
@@ -239,9 +269,11 @@ void board_draw() {
     // Draw boarder of board
     DrawRectangleLinesEx(board.board_rect, 6, BLACK);
 
+    if (board.is_paused) sbutton_draw(&board.resume_button, GRAY, BLACK);
+
     switch (board.scene) {
         case SSCENE_PUZZLE_BOARD:
-            timer_darw(&board.timer, board.timer_rect);
+            timer_darw(&board.timer, board.timer_rect, board.is_paused);
             break;
         default:
             break;
@@ -518,4 +550,14 @@ static void board_clear_not_fixed() {
             else board.state[i][j] = 0;
         }
     }
+}
+
+static bool board_have_invalid(void) {
+    for (int i = 0; i < 9; ++i) {
+        for (int j = 0; j < 9; ++j) {
+            if (board.state[i][j] & INVALID_MASK) return false;
+        }
+    }
+
+    return true;
 }
