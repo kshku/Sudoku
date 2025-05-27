@@ -7,9 +7,8 @@ set(SRCS
     main_menu.c
     board.h
     board.c
-
-    # options.h
-    # options.c
+    loading.h
+    loading.c
 )
 
 target_include_directories(sudoku PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

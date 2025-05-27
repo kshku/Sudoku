@@ -16,6 +16,3 @@ void sbutton_draw(SButton *sbutton, Color button_color, Color text_color) {
     DrawRectangleRounded(sbutton->rect, 3, 0, button_color);
     stext_draw(&sbutton->text, text_color);
 }
-
-bool sbutton_clicked(SButton *sbutton) {
-}

@@ -1,5 +1,6 @@
 #include "board.h"
 
+#include "loading.h"
 #include "utils/stext.h"
 #include "utils/timer.h"
 
@@ -22,11 +23,14 @@ typedef struct Board {
         float font_size;
 
         bool is_solving;
+
+        bool loading;
+        LoadingScreen loading_screen;
 } Board;
 
 static Board board;
 
-static void board_create_puzzle(int n_filled);
+static void board_create_puzzle(int n_filled, LoadingData *data);
 
 static void board_create_empty(void);
 
@@ -41,6 +45,8 @@ static bool board_is_safe_to_insert(int value, int row, int col);
 static void board_clear_not_fixed();
 
 static void board_solve_anim();
+
+static void *board_load(void *data, SThread *thread);
 
 void board_init(void) {
     board.row = board.col = 0;
@@ -60,19 +66,40 @@ void board_init(void) {
     board.text_size = MeasureTextEx(*resources.font, "0", board.font_size, 1);
 
     board.is_solving = false;
+    board.loading = false;
+}
+
+static void *board_load(void *data, SThread *thread) {
+    (void)(thread);
+    LoadingData *loading_data = (LoadingData *)data;
+    if (board.scene == SSCENE_PUZZLE_BOARD)
+        board_create_puzzle(10, loading_data);
+    else board_create_empty();
+
+    loading_data->done = true;
+
+    return NULL;
 }
 
 void board_start(SScene scene) {
     board.scene = scene;
-    if (scene == SSCENE_PUZZLE_BOARD) {
-        board_create_puzzle(10);
-        timer_start(&board.timer);
-    } else {
-        board_create_empty();
-    }
+    board.loading = true;
+    loading_screen_init(&board.loading_screen, board_load,
+                        scene == SSCENE_PUZZLE_BOARD ? "Loading Puzzle..."
+                                                     : "Loading Solver...",
+                        1);
 }
 
 SScene board_update() {
+    if (board.loading) {
+        board.loading = !loading_screen_update(&board.loading_screen);
+        if (!board.loading) {
+            loading_screen_shutdown(&board.loading_screen);
+            timer_start(&board.timer);
+        }
+        return board.scene;
+    }
+
     // Change selection based on mouse input
     if (!board.is_solving) {
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
@@ -151,6 +178,11 @@ SScene board_update() {
 }
 
 void board_draw() {
+    if (board.loading) {
+        loading_screen_draw(&board.loading_screen);
+        return;
+    }
+
     for (int i = 0; i < 9; ++i) {
         float cy = board.board_rect.y + (board.cell_height * i);
 
@@ -227,9 +259,13 @@ static void board_create_empty(void) {
     board.row = board.col = 0;
 }
 
-static void board_create_puzzle(int n_filled) {
+static void board_create_puzzle(int n_filled, LoadingData *data) {
+    data->max_tasks = 82;
+    data->completed_tasks = 0;
     (void)(n_filled);
     board_create_empty();
+    data->completed_tasks = 0;
+    data->completed_tasks++;
 
     // Sample board
     int sample[9][9] = {
@@ -244,26 +280,27 @@ static void board_create_puzzle(int n_filled) {
         {0, 0, 3, 0, 0, 0, 1, 9, 6}
     };
 
-    for (int i = 0; i < 9; ++i) /*{*/
-        for (int j = 0; j < 9; ++j) /*{*/
+    for (int i = 0; i < 9; ++i) {
+        for (int j = 0; j < 9; ++j) {
             /*sample[i][j] = 1;*/
             if (sample[i][j]) board.state[i][j] = sample[i][j] | FIXED_MASK;
-    /*}
-}*/
+            data->completed_tasks++;
+        }
+    }
 
-    // for (int i = 0; i < n_filled; ++i) {
+    // for (int i = 0; i < 81; ++i) {
     //     int row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
     //     int value = GetRandomValue(1, 9);
 
-    //     while (board.state[row][col]) {
+    //     while (board.state[row][col]
+    //            || !board_is_safe_to_insert(value, row, col)) {
     //         row = GetRandomValue(0, 8);
     //         col = GetRandomValue(0, 8);
+    //         value = GetRandomValue(1, 9);
     //     }
 
-    //     while (!board_is_safe_to_insert(board, value, row, col))
-    //         value = GetRandomValue(1, 9);
-
     //     board.state[row][col] = value | FIXED_MASK;
+    //     data->completed_tasks++;
     // }
 }
 
@@ -354,24 +391,20 @@ static void board_clear_invalid(void) {
 }
 
 static bool board_is_safe_to_insert(int value, int row, int col) {
+    int grid_i_start = (row / 3) * 3;
+    int grid_j_start = (col / 3) * 3;
+    int grid_i, grid_j;
     for (int i = 0; i < 9; ++i) {
         // Check row
         if ((board.state[i][col] & ~ALL_MASK) == value) return false;
 
         // Check column
         if ((board.state[row][i] & ~ALL_MASK) == value) return false;
-    }
 
-    // Check grid
-    int grid_i_start = (row / 3) * 3;
-    int grid_j_start = (col / 3) * 3;
-    for (int i = 0; i < 3; ++i) {
-        int grid_i = grid_i_start + i;
-        for (int j = 0; j < 3; ++j) {
-            int grid_j = grid_j_start + j;
-            if ((board.state[grid_i][grid_j] & ~ALL_MASK) == value)
-                return false;
-        }
+        // Check grid
+        grid_i = grid_i_start + i / 3;
+        grid_j = grid_j_start + i % 3;
+        if ((board.state[grid_i][grid_j] & ~ALL_MASK) == value) return false;
     }
 
     return true;

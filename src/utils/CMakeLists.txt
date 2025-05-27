@@ -5,6 +5,8 @@ set(SRCS
     sbutton.c
     timer.h
     timer.c
+    sthread.h
+    sthread.c
 )
 
 target_sources(sudoku PRIVATE ${SRCS})
