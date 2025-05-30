@@ -4,6 +4,7 @@
 #include "loading.h"
 #include "utils/sbutton.h"
 #include "utils/stext.h"
+#include "utils/sthread.h"
 #include "utils/timer.h"
 
 typedef enum Mask {
@@ -14,7 +15,7 @@ typedef enum Mask {
 
 typedef struct Board {
         SScene scene;
-        int state[9][9];
+        atomic_int state[9][9];
         Timer timer;
         int row, col;
         Rectangle board_rect;
@@ -37,6 +38,9 @@ typedef struct Board {
         SButton pause_game_button;
         SButton clear_board_button;
         SButton new_puzzle_button;
+
+        SThread solver_thread;
+        bool solver_thread_running;
 } Board;
 
 typedef enum SolverState {
@@ -76,6 +80,8 @@ static bool board_is_safe_to_insert(int value, int row, int col);
 static void board_clear_not_fixed();
 
 static void board_solve_anim();
+
+static void *board_solve(void *data, SThread *thread);
 
 static void *board_load(void *data, SThread *thread);
 
@@ -135,6 +141,8 @@ void board_init(SScene scene) {
                         scene == SSCENE_PUZZLE_BOARD ? "Loading Puzzle..."
                                                      : "Loading Solver...",
                         1);
+
+    board.solver_thread_running = false;
 }
 
 static void *board_load(void *data, SThread *thread) {
@@ -244,7 +252,11 @@ SScene board_update() {
         }
 
     } else {
-        board_solve_anim();
+        // board_solve_anim();
+        if (!board.solver_thread_running) {
+            board.solver_thread_running =
+                sthread_create(&board.solver_thread, board_solve, NULL);
+        }
     }
 
     board_update_buttons(mpos, is_pressed);
@@ -361,41 +373,41 @@ static void board_create_puzzle(int n_filled, LoadingData *data) {
     data->completed_tasks = 0;
     data->completed_tasks++;
 
-    // // Sample board
-    // int sample[9][9] = {
-    //     {5, 0, 1, 6, 0, 7, 9, 0, 0},
-    //     {0, 0, 9, 0, 0, 3, 2, 5, 0},
-    //     {8, 2, 7, 0, 9, 0, 0, 0, 0},
-    //     {9, 0, 2, 0, 5, 1, 3, 7, 0},
-    //     {3, 0, 0, 9, 8, 0, 0, 0, 0},
-    //     {0, 0, 5, 7, 0, 6, 0, 0, 0},
-    //     {4, 0, 6, 0, 7, 5, 0, 3, 2},
-    //     {0, 1, 0, 0, 0, 0, 7, 0, 5},
-    //     {0, 0, 3, 0, 0, 0, 1, 9, 6}
-    // };
+    // Sample board
+    int sample[9][9] = {
+        {5, 0, 1, 6, 0, 7, 9, 0, 0},
+        {0, 0, 9, 0, 0, 3, 2, 5, 0},
+        {8, 2, 7, 0, 9, 0, 0, 0, 0},
+        {9, 0, 2, 0, 5, 1, 3, 7, 0},
+        {3, 0, 0, 9, 8, 0, 0, 0, 0},
+        {0, 0, 5, 7, 0, 6, 0, 0, 0},
+        {4, 0, 6, 0, 7, 5, 0, 3, 2},
+        {0, 1, 0, 0, 0, 0, 7, 0, 5},
+        {0, 0, 3, 0, 0, 0, 1, 9, 6}
+    };
 
-    // for (int i = 0; i < 9; ++i) {
-    //     for (int j = 0; j < 9; ++j) {
-    //         /*sample[i][j] = 1;*/
-    //         if (sample[i][j]) board.state[i][j] = sample[i][j] | FIXED_MASK;
-    //         data->completed_tasks++;
-    //     }
-    // }
-
-    for (int i = 0; i < 10; ++i) {
-        int row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
-        int value = GetRandomValue(1, 9);
-
-        while (board.state[row][col]
-               || !board_is_safe_to_insert(value, row, col)) {
-            row = GetRandomValue(0, 8);
-            col = GetRandomValue(0, 8);
-            value = GetRandomValue(1, 9);
+    for (int i = 0; i < 9; ++i) {
+        for (int j = 0; j < 9; ++j) {
+            /*sample[i][j] = 1;*/
+            if (sample[i][j]) board.state[i][j] = sample[i][j] | FIXED_MASK;
+            data->completed_tasks++;
         }
-
-        board.state[row][col] = value | FIXED_MASK;
-        data->completed_tasks++;
     }
+
+    // for (int i = 0; i < 10; ++i) {
+    //     int row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
+    //     int value = GetRandomValue(1, 9);
+
+    //     while (board.state[row][col]
+    //            || !board_is_safe_to_insert(value, row, col)) {
+    //         row = GetRandomValue(0, 8);
+    //         col = GetRandomValue(0, 8);
+    //         value = GetRandomValue(1, 9);
+    //     }
+
+    //     board.state[row][col] = value | FIXED_MASK;
+    //     data->completed_tasks++;
+    // }
 }
 
 static bool is_solved(void) {
@@ -646,4 +658,34 @@ static void board_draw_buttons(void) {
     if (board.scene == SSCENE_PUZZLE_BOARD)
         sbutton_draw(&board.pause_game_button, BLUE, BLACK);
     else sbutton_draw(&board.pause_game_button, GRAY, BLACK);
+}
+
+static bool board_solve_helper(int i, int j) {
+    // Solve by backtrack
+    if (i == 9) return true;
+
+    int next_j = (j + 1) % 9;
+
+    if (board.state[i][j] & FIXED_MASK) {
+        if (board_solve_helper(next_j == 0 ? i + 1 : i, next_j)) return true;
+    } else {
+        for (int k = 1; k < 10; ++k) {
+            if (board_is_safe_to_insert(k, i, j)) {
+                board.state[i][j] = k;
+                if (board_solve_helper(next_j == 0 ? i + 1 : i, next_j))
+                    return true;
+
+                board.state[i][j] = 0;
+            }
+        }
+    }
+
+    return false;
+}
+
+static void *board_solve(void *data, SThread *thread) {
+    (void)(data);
+    (void)(thread);
+    if (!board_solve_helper(0, 0)) TraceLog(LOG_ERROR, "Cannot Solve!");
+    return NULL;
 }
