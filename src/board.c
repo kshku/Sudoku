@@ -36,7 +36,28 @@ typedef struct Board {
         SButton solve_button;
         SButton pause_game_button;
         SButton clear_board_button;
+        SButton new_puzzle_button;
 } Board;
+
+typedef enum SolverState {
+    SELECT,
+    SELECT_PREV,
+    SOLVE,
+    WAIT,
+    CANNOT_SOLVE,
+    COMPLETED
+} SolverState;
+
+typedef struct Solver {
+        bool solving;
+        int wait_count;
+        bool done;
+
+        SolverState after_wait;
+        SolverState state;
+} Solver;
+
+static Solver solver = {.solving = false};
 
 static Board board;
 
@@ -106,6 +127,7 @@ void board_init(SScene scene) {
     buttons_rect.width += width_4;
 
     sbutton_create(&board.clear_board_button, "Clear Board", 40, buttons_rect);
+    sbutton_create(&board.new_puzzle_button, "New Puzzle", 40, buttons_rect);
 
     board.scene = scene;
     board.loading = true;
@@ -229,7 +251,7 @@ SScene board_update() {
 
     if (board.scene == SSCENE_SOLVER_BOARD) board_highlight_invalid();
 
-    if (is_solved()) {
+    if (!board.is_solving && is_solved()) {
         unsigned int hour, min, sec;
         timer_get_hour_min_sec(board.timer.elapsed, &hour, &min, &sec);
         end_init(hour, min, sec);
@@ -327,6 +349,8 @@ static void board_create_empty(void) {
         for (int j = 0; j < 9; ++j) board.state[i][j] = 0;
 
     board.row = board.col = 0;
+
+    solver.solving = false;
 }
 
 static void board_create_puzzle(int n_filled, LoadingData *data) {
@@ -337,41 +361,41 @@ static void board_create_puzzle(int n_filled, LoadingData *data) {
     data->completed_tasks = 0;
     data->completed_tasks++;
 
-    // Sample board
-    int sample[9][9] = {
-        {5, 0, 1, 6, 0, 7, 9, 0, 0},
-        {0, 0, 9, 0, 0, 3, 2, 5, 0},
-        {8, 2, 7, 0, 9, 0, 0, 0, 0},
-        {9, 0, 2, 0, 5, 1, 3, 7, 0},
-        {3, 0, 0, 9, 8, 0, 0, 0, 0},
-        {0, 0, 5, 7, 0, 6, 0, 0, 0},
-        {4, 0, 6, 0, 7, 5, 0, 3, 2},
-        {0, 1, 0, 0, 0, 0, 7, 0, 5},
-        {0, 0, 3, 0, 0, 0, 1, 9, 6}
-    };
+    // // Sample board
+    // int sample[9][9] = {
+    //     {5, 0, 1, 6, 0, 7, 9, 0, 0},
+    //     {0, 0, 9, 0, 0, 3, 2, 5, 0},
+    //     {8, 2, 7, 0, 9, 0, 0, 0, 0},
+    //     {9, 0, 2, 0, 5, 1, 3, 7, 0},
+    //     {3, 0, 0, 9, 8, 0, 0, 0, 0},
+    //     {0, 0, 5, 7, 0, 6, 0, 0, 0},
+    //     {4, 0, 6, 0, 7, 5, 0, 3, 2},
+    //     {0, 1, 0, 0, 0, 0, 7, 0, 5},
+    //     {0, 0, 3, 0, 0, 0, 1, 9, 6}
+    // };
 
-    for (int i = 0; i < 9; ++i) {
-        for (int j = 0; j < 9; ++j) {
-            /*sample[i][j] = 1;*/
-            if (sample[i][j]) board.state[i][j] = sample[i][j] | FIXED_MASK;
-            data->completed_tasks++;
-        }
-    }
-
-    // for (int i = 0; i < 81; ++i) {
-    //     int row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
-    //     int value = GetRandomValue(1, 9);
-
-    //     while (board.state[row][col]
-    //            || !board_is_safe_to_insert(value, row, col)) {
-    //         row = GetRandomValue(0, 8);
-    //         col = GetRandomValue(0, 8);
-    //         value = GetRandomValue(1, 9);
+    // for (int i = 0; i < 9; ++i) {
+    //     for (int j = 0; j < 9; ++j) {
+    //         /*sample[i][j] = 1;*/
+    //         if (sample[i][j]) board.state[i][j] = sample[i][j] | FIXED_MASK;
+    //         data->completed_tasks++;
     //     }
-
-    //     board.state[row][col] = value | FIXED_MASK;
-    //     data->completed_tasks++;
     // }
+
+    for (int i = 0; i < 10; ++i) {
+        int row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
+        int value = GetRandomValue(1, 9);
+
+        while (board.state[row][col]
+               || !board_is_safe_to_insert(value, row, col)) {
+            row = GetRandomValue(0, 8);
+            col = GetRandomValue(0, 8);
+            value = GetRandomValue(1, 9);
+        }
+
+        board.state[row][col] = value | FIXED_MASK;
+        data->completed_tasks++;
+    }
 }
 
 static bool is_solved(void) {
@@ -480,26 +504,6 @@ static bool board_is_safe_to_insert(int value, int row, int col) {
     return true;
 }
 
-typedef enum SolverState {
-    SELECT,
-    SELECT_PREV,
-    SOLVE,
-    WAIT,
-    CANNOT_SOLVE,
-    COMPLETED
-} SolverState;
-
-typedef struct Solver {
-        bool solving;
-        int wait_count;
-        bool done;
-
-        SolverState after_wait;
-        SolverState state;
-} Solver;
-
-static Solver solver = {.solving = false};
-
 static void board_solve_anim() {
     if (!solver.solving) {
         solver.solving = true;
@@ -542,9 +546,9 @@ static void board_solve_anim() {
                     if (board.state[board.row][board.col] & FIXED_MASK)
                         goto reselect;
 
-                // solver.state = SOLVE;
-                solver.state = WAIT;
-                solver.wait_count = 10;
+                solver.state = SOLVE;
+                // solver.state = WAIT;
+                // solver.wait_count = 10;
                 solver.after_wait = SOLVE;
                 break;
             case SOLVE:
@@ -553,21 +557,21 @@ static void board_solve_anim() {
                         (board.state[board.row][board.col] & ~ALL_MASK) + 1;
                     if (!board_is_safe_to_insert(value, board.row, board.col)) {
                         solver.after_wait = SOLVE;
-                        // solver.state = SOLVE;
+                        solver.state = SOLVE;
                         value |= INVALID_MASK;
                     } else {
                         solver.after_wait = SELECT;
-                        // solver.state = SELECT;
+                        solver.state = SELECT;
                     }
                     board.state[board.row][board.col] = value;
                 } else {
                     board.state[board.row][board.col] = 0;
                     solver.after_wait = SELECT_PREV;
-                    //     solver.state = SELECT_PREV;
+                    solver.state = SELECT_PREV;
                 }
 
-                solver.state = WAIT;
-                solver.wait_count = 10;
+                // solver.state = WAIT;
+                // solver.wait_count = 10;
                 break;
             case CANNOT_SOLVE:
                 TraceLog(LOG_ERROR, "Can't solve!");
