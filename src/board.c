@@ -91,6 +91,8 @@ static void board_draw_buttons(void);
 
 static void board_update_buttons(Vector2 mpos, bool is_pressed);
 
+static bool board_solve_helper(int i, int j, int mask);
+
 void board_init(SScene scene) {
     board.row = board.col = 0;
     board.timer_rect = (Rectangle){.x = 0,
@@ -149,7 +151,7 @@ static void *board_load(void *data, SThread *thread) {
     (void)(thread);
     LoadingData *loading_data = (LoadingData *)data;
     if (board.scene == SSCENE_PUZZLE_BOARD)
-        board_create_puzzle(10, loading_data);
+        board_create_puzzle(25, loading_data);
     else board_create_empty();
 
     loading_data->done = true;
@@ -366,48 +368,50 @@ static void board_create_empty(void) {
 }
 
 static void board_create_puzzle(int n_filled, LoadingData *data) {
-    data->max_tasks = 82;
+    data->max_tasks = n_filled + 1;
     data->completed_tasks = 0;
-    (void)(n_filled);
+
+retry:
     board_create_empty();
-    data->completed_tasks = 0;
-    data->completed_tasks++;
+    for (int i = 0; i < 25; ++i) {
+        int count = 0;
+        int row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
+        int value = GetRandomValue(1, 9);
 
-    // Sample board
-    int sample[9][9] = {
-        {5, 0, 1, 6, 0, 7, 9, 0, 0},
-        {0, 0, 9, 0, 0, 3, 2, 5, 0},
-        {8, 2, 7, 0, 9, 0, 0, 0, 0},
-        {9, 0, 2, 0, 5, 1, 3, 7, 0},
-        {3, 0, 0, 9, 8, 0, 0, 0, 0},
-        {0, 0, 5, 7, 0, 6, 0, 0, 0},
-        {4, 0, 6, 0, 7, 5, 0, 3, 2},
-        {0, 1, 0, 0, 0, 0, 7, 0, 5},
-        {0, 0, 3, 0, 0, 0, 1, 9, 6}
-    };
-
-    for (int i = 0; i < 9; ++i) {
-        for (int j = 0; j < 9; ++j) {
-            /*sample[i][j] = 1;*/
-            if (sample[i][j]) board.state[i][j] = sample[i][j] | FIXED_MASK;
-            data->completed_tasks++;
+        while (
+            (board.state[row][col] || !board_is_safe_to_insert(value, row, col))
+            && count < 100) {
+            row = GetRandomValue(0, 8);
+            col = GetRandomValue(0, 8);
+            value = GetRandomValue(1, 9);
+            ++count;
         }
+
+        if (count == 100) goto retry;
+
+        board.state[row][col] = value | FIXED_MASK;
     }
 
-    // for (int i = 0; i < 10; ++i) {
-    //     int row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
-    //     int value = GetRandomValue(1, 9);
+    if (!board_solve_helper(0, 0, FIXED_MASK)) goto retry;
 
-    //     while (board.state[row][col]
-    //            || !board_is_safe_to_insert(value, row, col)) {
-    //         row = GetRandomValue(0, 8);
-    //         col = GetRandomValue(0, 8);
-    //         value = GetRandomValue(1, 9);
-    //     }
+    data->completed_tasks++;
 
-    //     board.state[row][col] = value | FIXED_MASK;
-    //     data->completed_tasks++;
-    // }
+    for (int i = 0; i < 81 - n_filled; ++i) {
+        board_clear_not_fixed();
+        int row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
+        while (!board.state[row][col])
+            row = GetRandomValue(0, 8), col = GetRandomValue(0, 8);
+
+        int value = board.state[row][col];
+        board.state[row][col] = 0;
+        if (board_solve_helper(0, 0, 0)) {
+            data->completed_tasks++;
+            continue;
+        }
+        board.state[row][col] = value;
+        --i;
+    }
+    board_clear_not_fixed();
 }
 
 static bool is_solved(void) {
@@ -660,19 +664,20 @@ static void board_draw_buttons(void) {
     else sbutton_draw(&board.pause_game_button, GRAY, BLACK);
 }
 
-static bool board_solve_helper(int i, int j) {
+static bool board_solve_helper(int i, int j, int mask) {
     // Solve by backtrack
     if (i == 9) return true;
 
     int next_j = (j + 1) % 9;
 
     if (board.state[i][j] & FIXED_MASK) {
-        if (board_solve_helper(next_j == 0 ? i + 1 : i, next_j)) return true;
+        if (board_solve_helper(next_j == 0 ? i + 1 : i, next_j, mask))
+            return true;
     } else {
         for (int k = 1; k < 10; ++k) {
             if (board_is_safe_to_insert(k, i, j)) {
-                board.state[i][j] = k;
-                if (board_solve_helper(next_j == 0 ? i + 1 : i, next_j))
+                board.state[i][j] = k | mask;
+                if (board_solve_helper(next_j == 0 ? i + 1 : i, next_j, mask))
                     return true;
 
                 board.state[i][j] = 0;
@@ -686,6 +691,6 @@ static bool board_solve_helper(int i, int j) {
 static void *board_solve(void *data, SThread *thread) {
     (void)(data);
     (void)(thread);
-    if (!board_solve_helper(0, 0)) TraceLog(LOG_ERROR, "Cannot Solve!");
+    if (!board_solve_helper(0, 0, 0)) TraceLog(LOG_ERROR, "Cannot Solve!");
     return NULL;
 }
